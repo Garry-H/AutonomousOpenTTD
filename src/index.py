@@ -8,10 +8,22 @@ import cv2
 import time
 
 
+def drawTriangleToRender(input_renderer):
+    SDL_SetRenderDrawColor(input_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE)
+    SDL_SetRenderDrawColor(input_renderer, 255, 255, 255, SDL_ALPHA_OPAQUE)
+    SDL_RenderDrawLine(input_renderer, 10, 480, 320, 10)
+    SDL_RenderDrawLine(input_renderer, 640, 480, 320, 10)
+    SDL_RenderDrawLine(input_renderer, 10, 480, 640, 480)
+
+def createRendererContext(input_window):
+    return SDL_CreateRenderer(input_window, -1, 0, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE)
+
 def process_img(original_image):
     processed_img = original_image
+    processed_img = np.array(original_image)
     processed_img = cv2.cvtColor(processed_img, cv2.COLOR_BGR2GRAY)
     processed_img = cv2.Canny(processed_img, threshold1=200, threshold2=300)
+    # processed_img = Image.fromarray(processed_img).convert("RGBA")
     return processed_img
 
 def convertPILImageToSDLRGBSurface(pil_image_input):
@@ -65,46 +77,49 @@ def convertPILImageToSDLRGBSurface(pil_image_input):
 
     return imgsurface
 
-# while(True):
-#     screen = np.array(ImageGrab.grab(bbox=(0,80, 800, 640)))
-#     new_screen = process_img(screen)
-#     pil_screen = Image.fromarray(new_screen)
-
-#     cv2.imshow('window', new_screen)
-#     # cv2.imshow('window', cv2.cvtColor(np.array(printscreen_pil), cv2.COLOR_BGR2RGB))
-#     print('Process cycle took, %s seconds' % (time.time()-last_time))
-#     last_time = time.time()
-#     if cv2.waitKey(25) & 0xFF == ord('q'):
-#         cv2.destroyAllWindows()
-#         break
-
 def main():
     SDL_Init(SDL_INIT_VIDEO)
     window = SDL_CreateWindow(b"Hello World",
-                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                              1000, SDL_WINDOWPOS_CENTERED,
                               800, 560, SDL_WINDOW_SHOWN)
     windowsurface = SDL_GetWindowSurface(window)
+    renderer = createRendererContext(window)
 
     last_time = time.time()
     event = SDL_Event()
     running = True
 
+    last_frame = np.array([])
+    prev_frame = np.array([])
+
     while running:
         print('Process cycle took, %s seconds' % (time.time()-last_time))
         last_time = time.time()
-        screen_capture = ImageGrab.grab(bbox=(0, 80, 800, 640))
-        np_image = np.array(screen_capture)
-        processed_image = process_img(np_image)
-        pil_image = Image.fromarray(processed_image).convert("RGBA")
-        # pil_image.save("img.png", "PNG")
-        # print(pil_image.mode)
-        # cv2.imshow('window', processed_image)
-        # print(Image.fromarray(processed_image))
-        imagesurface = convertPILImageToSDLRGBSurface(pil_image)
 
-        SDL_BlitSurface(imagesurface, None, windowsurface, None)
-        SDL_UpdateWindowSurface(window)
-        SDL_FreeSurface(imagesurface)
+        screen_capture = ImageGrab.grab(bbox=(0, 80, 800, 640))
+        diff_img = screen_capture
+        processed_image = process_img(screen_capture)
+        # processed_image = screen_capture
+
+        if len(last_frame) > 0 or len(prev_frame) > 0:
+            diff = cv2.absdiff(last_frame, np.array(processed_image))
+            diff_img = Image.fromarray(diff).convert("RGBA")
+            last_frame = np.array(processed_image)
+        else:
+            diff = cv2.absdiff(last_frame, np.array(processed_image))
+            diff_img = Image.fromarray(diff).convert("RGBA")
+            prev_frame = np.array(processed_image)
+
+
+        image_surface = convertPILImageToSDLRGBSurface(diff_img)
+        image_texture = SDL_CreateTextureFromSurface(renderer, image_surface)
+        SDL_FreeSurface(image_surface)
+
+        SDL_RenderClear(renderer)
+        SDL_RenderCopy(renderer, image_texture, None, None)
+        # drawTriangleToRender(renderer)
+        SDL_RenderPresent(renderer)
+
         while SDL_PollEvent(ctypes.byref(event)) != 0:
             if event.type == SDL_QUIT:
                 running = False
